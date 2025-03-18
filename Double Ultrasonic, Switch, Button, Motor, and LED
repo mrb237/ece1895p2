@@ -1,0 +1,224 @@
+#include <SPI.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <Servo.h> // Include servo library
+#include <ezButton.h> // Include ezButton library
+
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 32
+#define OLED_RESET -1
+#define SCREEN_ADDRESS 0x3C
+#define Servo_PWM 6 // D6 pin for PWM signal to the servo motor
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+const int trigPin1 = 7;
+const int echoPin1 = 8;
+const int trigPin2 = 4;
+const int echoPin2 = 5;
+const int motorPin = 6; // Pin for the motor
+const int VRX_PIN = A0; // Joystick VRX pin
+const int VRY_PIN = A1; // Joystick VRY pin
+const int SW_PIN = 2;   // Joystick switch pin
+const int LED_PIN = 2;  // Pin for LED
+const int BUTTON_PIN = A2; // New button pin
+
+#define LEFT_THRESHOLD  400
+#define RIGHT_THRESHOLD 800
+#define UP_THRESHOLD    400
+#define DOWN_THRESHOLD  800
+#define UPDATE_INTERVAL 100 // 100ms
+
+float duration1, distance1, duration2, distance2;
+Servo MG995_Servo; // Define an instance of Servo for MG995
+ezButton button(SW_PIN);
+ezButton externalButton(BUTTON_PIN); // Create an instance of ezButton for the external button
+
+int xValue = 0; // To store value of the X axis
+int yValue = 0; // To store value of the Y axis
+int command = 0;
+
+unsigned long lastUpdateTime = 0;
+
+void setup() {
+    // Initialize the OLED display
+    if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+        for (;;);
+    }
+
+    // Clear the display
+    display.clearDisplay();
+   
+    // Initial screen message
+    display.setTextSize(2);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(10, 10);
+    display.println("Ready");
+    display.display();
+
+    Serial.begin(9600); // Initialize UART with 9600 Baud rate
+    MG995_Servo.attach(Servo_PWM); // Connect the servo to D6 pin
+
+    pinMode(trigPin1, OUTPUT);
+    pinMode(echoPin1, INPUT);
+    pinMode(trigPin2, OUTPUT);
+    pinMode(echoPin2, INPUT);
+    pinMode(motorPin, OUTPUT); // Pin for the motor
+    pinMode(LED_PIN, OUTPUT);   // Set the LED pin as an output
+
+    button.setDebounceTime(50); // Set debounce time for joystick button
+    externalButton.setDebounceTime(50); // Set debounce time for the external button
+}
+
+void ultrasonic1() {
+    digitalWrite(LED_PIN, LOW); // Turn off LED when distance1 is greater than 10 cm
+    // Send pulse to trigger the ultrasonic sensor
+    digitalWrite(trigPin1, LOW);
+    delayMicroseconds(2);
+    digitalWrite(trigPin1, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(trigPin1, LOW);
+
+    duration1 = pulseIn(echoPin1, HIGH, 30000); // Add timeout (30ms)
+    if (duration1 > 0) {
+        distance1 = (duration1 * 0.0343) / 2; // Convert to cm
+    } else {
+        distance1 = -1; // Timeout, no valid reading
+    }
+
+    // Check if the distance1 reading is valid
+    if (distance1 > 0 && distance1 < 400) {
+        if (distance1 < 10) {
+            digitalWrite(LED_PIN, HIGH); // Turn on LED
+            digitalWrite(motorPin, HIGH); // Activate motor
+            delay(500); // Motor on for 500 ms
+            digitalWrite(motorPin, LOW); // Deactivate motor
+
+            // Move the servo to 0 degrees (clockwise)
+            Serial.println("Moving to 0 degrees");
+            MG995_Servo.write(0);
+            delay(1000); // Wait for 1 second
+
+            // Move the servo to 90 degrees (counterclockwise)
+            Serial.println("Moving to 90 degrees");
+            MG995_Servo.write(90);
+            delay(1000); // Wait for 1 second
+        }
+    }
+}
+
+void ultrasonic2() {
+    digitalWrite(LED_PIN, LOW); // Turn off LED when distance2 is greater than 10 cm
+    // Send pulse to trigger the ultrasonic sensor
+    digitalWrite(trigPin2, LOW);
+    delayMicroseconds(2);
+    digitalWrite(trigPin2, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(trigPin2, LOW);
+
+    duration2 = pulseIn(echoPin2, HIGH, 30000); // Add timeout (30ms)
+    if (duration2 > 0) {
+        distance2 = (duration2 * 0.0343) / 2; // Convert to cm
+    } else {
+        distance2 = -1; // Timeout, no valid reading
+    }
+
+    // Check if the distance2 reading is valid
+    if (distance2 > 0 && distance2 < 400) {
+        if (distance2 < 10) {
+            digitalWrite(LED_PIN, HIGH); // Turn on LED
+            digitalWrite(motorPin, HIGH); // Activate motor
+            delay(500); // Motor on for 500 ms
+            digitalWrite(motorPin, LOW); // Deactivate motor
+
+            // Move the servo to 0 degrees (clockwise)
+            Serial.println("Moving to 0 degrees");
+            MG995_Servo.write(0);
+            delay(1000); // Wait for 1 second
+
+            // Move the servo to 90 degrees (counterclockwise)
+            Serial.println("Moving to 90 degrees");
+            MG995_Servo.write(90);
+            delay(1000); // Wait for 1 second
+        }
+    }
+}
+
+void processJoystick() {
+    button.loop(); // MUST call the loop() function first
+
+    if (millis() - lastUpdateTime > UPDATE_INTERVAL) {
+        lastUpdateTime = millis();
+
+        // Read analog X and Y values
+        xValue = analogRead(VRX_PIN);
+        yValue = analogRead(VRY_PIN);
+
+        // Reset command
+        command = 0;
+
+        // Check if joystick is pushed to left/right
+        if (xValue < LEFT_THRESHOLD || xValue > RIGHT_THRESHOLD)
+            command = 1;
+
+        // Check if joystick is pushed up/down
+        if (yValue < UP_THRESHOLD || yValue > DOWN_THRESHOLD)
+            command = 1;
+
+        // Process the joystick position and control LED
+        if (command) {
+            Serial.println("Joystick moved, turning ON LED");
+            digitalWrite(LED_PIN, HIGH); // Turn ON the LED
+        } else {
+            // Only turn off LED if button is not pressed
+            if (!button.isPressed()) {
+                Serial.println("Joystick not moved, turning OFF LED");
+                digitalWrite(LED_PIN, LOW); // Turn OFF the LED
+            }
+        }
+    }
+
+    if (button.isPressed()) {
+        Serial.println("The button is pressed, LED stays ON");
+        digitalWrite(LED_PIN, HIGH); // Keep LED ON when button is pressed
+    }
+}
+
+void handleExternalButton() {
+    if (externalButton.isPressed()) {
+        Serial.println("External button pressed, turning ON LED");
+        digitalWrite(LED_PIN, HIGH); // Turn ON the LED
+    } else if (externalButton.isReleased()) {
+        Serial.println("External button released, turning OFF LED");
+        digitalWrite(LED_PIN, LOW); // Turn OFF the LED
+    }
+}
+
+void loop() {
+    // Update OLED display
+    display.clearDisplay(); // Clear previous content
+    display.setTextSize(2);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(10, 10);
+    display.print("Dist1: ");
+    display.print(distance1);
+    display.print("cm");
+    display.setCursor(10, 20);
+    display.print("Dist2: ");
+    display.print(distance2);
+    display.println("cm");
+    display.display(); // Refresh display
+
+    ultrasonic1(); // Handle first ultrasonic sensor
+    delay(100); // Short delay to give the first sensor time
+
+    ultrasonic2(); // Handle second ultrasonic sensor
+    delay(100); // Delay between loops for stable readings
+
+    processJoystick(); // Check joystick position and handle accordingly
+    delay(100); // Delay between loops for stable readings
+
+    handleExternalButton(); // Check external button and control LED
+    delay(100); // Delay between loops for stable readings
+}
